@@ -84,8 +84,10 @@ afterEvaluate {
     packageReleaseResources.dependsOn embedLibraryResources
 
     // Merge Native libraries
-    embedJniLibs.mustRunAfter packageReleaseJniLibs
-    bundleRelease.dependsOn embedJniLibs
+    if (tasks.findByPath('packageReleaseJniLibs') != null) {
+        embedJniLibs.mustRunAfter packageReleaseJniLibs
+        bundleRelease.dependsOn embedJniLibs
+    }
 
     // Merge Embedded Manifests
     embedManifests.mustRunAfter processReleaseManifest
@@ -156,7 +158,7 @@ task embedAssets << {
 
 /**
  * Merge proguard.txt files from all library modules
- * @author Marian Klühspies
+ * @author Marian Klï¿½hspies
  */
 task embedProguard << {
     println "====== Embedding proguard.txt files in " + project
