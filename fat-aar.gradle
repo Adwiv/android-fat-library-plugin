@@ -65,64 +65,78 @@ dependencies {
 }
 
 ext.embeddedAarDirs = new ArrayList<String>()
+ext.currentVariantName = new String()
+ext.currentBuildType = new String()
+ext.currentFlavor = new String()
 
 afterEvaluate {
-
-    // the list of dependency must be reversed to use the right overlay order.
-    def dependencies = new ArrayList(configurations.embedded.resolvedConfiguration.firstLevelModuleDependencies)
-    dependencies.reverseEach {
-        def aarPath = "build/intermediates/exploded-aar/${it.moduleGroup}/${it.moduleName}/${it.moduleVersion}"
-        if (!embeddedAarDirs.contains(aarPath)) {
-            embeddedAarDirs.add(aarPath)
+    android.libraryVariants.each { variant ->
+        def variantName = variant.getName().capitalize()
+        def taskName = "config${variantName}FatAar"
+        
+        task "$taskName"() << {
+            currentVariantName = variant.getName().capitalize()
+            currentBuildType = variant.getBuildType().getName()
+            currentFlavor = variant.getFlavorName()
         }
+
+        // the list of dependency must be reversed to use the right overlay order.
+        def dependencies = new ArrayList(configurations.embedded.resolvedConfiguration.firstLevelModuleDependencies)
+        dependencies.reverseEach {
+            def aarPath = "build/intermediates/exploded-aar/${it.moduleGroup}/${it.moduleName}/${it.moduleVersion}"
+            if (!embeddedAarDirs.contains(aarPath)) {
+                embeddedAarDirs.add(aarPath)
+            }
+        }
+
+        // Merge Assets
+        tasks.findByPath("generate${variantName}Assets").dependsOn embedAssets
+
+        // Embed Resources by overwriting the inputResourceSets
+        tasks.findByPath("package${variantName}Resources").dependsOn embedLibraryResources
+
+        // Merge Native libraries
+        if (tasks.findByPath("package${variantName}JniLibs") != null) {
+            embedJniLibs.mustRunAfter tasks.findByPath("package${variantName}JniLibs")
+        } else if (tasks.findByPath("merge${variantName}JniLibFolders") != null) {
+            embedJniLibs.mustRunAfter tasks.findByPath("merge${variantName}JniLibFolders")
+        }
+
+        tasks.findByPath("bundle${variantName}").dependsOn embedJniLibs
+
+        // Merge Embedded Manifests
+        embedManifests.mustRunAfter tasks.findByPath("process${variantName}Manifest")
+        tasks.findByPath("bundle${variantName}").dependsOn embedManifests
+
+        // Generate R.java for each embedded package and ensure it is compiled
+        embedRClassFiles.mustRunAfter tasks.findByPath("process${variantName}Resources")
+
+        // Merge proguard files
+        embedLibraryResources.dependsOn embedProguard
+
+        if (tasks.findByPath("compile${variantName}Java") != null) {
+            tasks.findByPath("compile${variantName}Java").dependsOn embedRClassFiles
+            embedJavaJars.mustRunAfter tasks.findByPath("compile${variantName}Java")
+        } else if (tasks.findByPath("compile${variantName}JavaWithJavac") != null) {
+            tasks.findByPath("compile${variantName}JavaWithJavac").dependsOn embedRClassFiles
+            embedJavaJars.mustRunAfter tasks.findByPath("compile${variantName}JavaWithJavac")
+        }
+
+        if (tasks.findByPath("proguard${variantName}") != null) {
+            tasks.findByPath("proguard${variantName}").dependsOn embedJavaJars
+        }
+
+        tasks.findByPath("bundle${variantName}").dependsOn embedJavaJars
+
+        tasks.findByPath("prepare${variant.getName().capitalize()}Dependencies").dependsOn taskName
     }
 
-    // Merge Assets
-    generateReleaseAssets.dependsOn embedAssets
-
-    // Embed Resources by overwriting the inputResourceSets
-    packageReleaseResources.dependsOn embedLibraryResources
-
-    // Merge Native libraries
-    if (tasks.findByPath('packageReleaseJniLibs') != null) {
-        embedJniLibs.mustRunAfter packageReleaseJniLibs
-    } else if (tasks.findByPath('mergeReleaseJniLibFolders') != null) {
-        embedJniLibs.mustRunAfter mergeReleaseJniLibFolders
-    } else {
-        NEEDTOFIX
-    }
-    bundleRelease.dependsOn embedJniLibs
-
-    // Merge Embedded Manifests
-    embedManifests.mustRunAfter processReleaseManifest
-    bundleRelease.dependsOn embedManifests
-
-    // Generate R.java for each embedded package and ensure it is compiled
-    embedRClassFiles.mustRunAfter processReleaseResources
-
-    // Merge proguard files
-    embedLibraryResources.dependsOn embedProguard
-
-    if (tasks.findByPath('compileReleaseJava') != null) {
-        compileReleaseJava.dependsOn embedRClassFiles
-        embedJavaJars.mustRunAfter compileReleaseJava
-    } else if (tasks.findByPath('compileReleaseJavaWithJavac') != null) {
-        compileReleaseJavaWithJavac.dependsOn embedRClassFiles
-        embedJavaJars.mustRunAfter compileReleaseJavaWithJavac
-    } else {
-        NEEDTOFIX
-    }
-
-    if (tasks.findByPath('proguardRelease') != null) {
-        proguardRelease.dependsOn embedJavaJars
-    }
-
-    bundleRelease.dependsOn embedJavaJars
 }
 
+
 task embedLibraryResources << {
-    def oldInputResourceSet = packageReleaseResources.inputResourceSets
-    packageReleaseResources.conventionMapping.map("inputResourceSets") {
+    def oldInputResourceSet = tasks.findByPath("package${currentVariantName}Resources").inputResourceSets
+    tasks.findByPath("package${currentVariantName}Resources").conventionMapping.map("inputResourceSets") {
         getMergedInputResourceSets(oldInputResourceSet)
     }
 }
@@ -166,7 +180,7 @@ task embedAssets << {
  */
 task embedProguard << {
     println "====== Embedding proguard.txt files in " + project
-    def proguardRelease = file("build/intermediates/bundles/release/proguard.txt")
+    def proguardRelease = file("build/intermediates/bundles/${currentFlavor}/${currentBuildType}/proguard.txt")
     embeddedAarDirs.each { aarPath ->
         try {
             def proguardLibFile = file("$aarPath/proguard.txt")
@@ -198,7 +212,7 @@ task embedJavaJars << {
             FileVisitDetails element ->
                 copy {
                     from(zipTree(element.file))
-                    into("build/intermediates/classes/release/")
+                    into("build/intermediates/classes/${currentFlavor}/${currentBuildType}/")
                 }
         }
     }
@@ -214,7 +228,7 @@ task embedJniLibs << {
         // Copy JNI Folders
         copy {
             from fileTree(dir: "$aarPath/jni")
-            into file("build/intermediates/bundles/release/jni")
+            into file("build/intermediates/bundles/${currentFlavor}/${currentBuildType}/jni")
         }
     }
 }
@@ -265,8 +279,8 @@ task embedRClassFiles << {
 
         // println sb
 
-        mkdir("build/generated/source/r/release/$packagePath")
-        file("build/generated/source/r/release/$packagePath/R.java").write(sb.toString())
+        mkdir("build/generated/source/r/${currentFlavor}/${currentBuildType}/$packagePath")
+        file("build/generated/source/r/${currentFlavor}/${currentBuildType}/$packagePath/R.java").write(sb.toString())
     }
 }
 
@@ -283,9 +297,9 @@ task embedManifests << {
 
     File reportFile = file("build/embedManifestReport.txt")
 
-    File origManifest = file("build/intermediates/bundles/release/AndroidManifest.xml")
-    File copyManifest = file("build/intermediates/bundles/release/AndroidManifest.orig.xml")
-    File aaptManifest = file("build/intermediates/bundles/release/aapt/AndroidManifest.xml")
+    File origManifest = file("build/intermediates/bundles/${currentFlavor}/${currentBuildType}/AndroidManifest.xml")
+    File copyManifest = file("build/intermediates/bundles/${currentFlavor}/${currentBuildType}/AndroidManifest.orig.xml")
+    File aaptManifest = file("build/intermediates/bundles/${currentFlavor}/${currentBuildType}/aapt/AndroidManifest.xml")
 
     copy {
         from origManifest.parentFile
