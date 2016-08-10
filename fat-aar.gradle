@@ -71,7 +71,7 @@ afterEvaluate {
     // the list of dependency must be reversed to use the right overlay order.
     def dependencies = new ArrayList(configurations.embedded.resolvedConfiguration.firstLevelModuleDependencies)
     dependencies.reverseEach {
-        def aarPath = "build/intermediates/exploded-aar/${it.moduleGroup}/${it.moduleName}/${it.moduleVersion}"
+        def aarPath = project.buildDir.path + "/intermediates/exploded-aar/${it.moduleGroup}/${it.moduleName}/${it.moduleVersion}"
         if (!embeddedAarDirs.contains(aarPath)) {
             embeddedAarDirs.add(aarPath)
         }
@@ -136,7 +136,7 @@ private List getMergedInputResourceSets(List inputResourceSet) {
 
     embeddedAarDirs.each { aarPath ->
         try {
-            def resname = (aarPath.split("build/intermediates/exploded-aar/")[1]).replace('/', ':');
+            def resname = (aarPath.split(project.buildDir.path + "/intermediates/exploded-aar/")[1]).replace('/', ':');
             def rs = ResourceSetClass.newInstance([resname] as Object[])
             rs.addSource(file("$aarPath/res"))
             // println "ResourceSet is " + rs
@@ -166,7 +166,7 @@ task embedAssets << {
  */
 task embedProguard << {
     println "====== Embedding proguard.txt files in " + project
-    def proguardRelease = file("build/intermediates/bundles/release/proguard.txt")
+    def proguardRelease = file(project.buildDir.path + "/intermediates/bundles/release/proguard.txt")
     embeddedAarDirs.each { aarPath ->
         try {
             def proguardLibFile = file("$aarPath/proguard.txt")
@@ -198,7 +198,7 @@ task embedJavaJars << {
             FileVisitDetails element ->
                 copy {
                     from(zipTree(element.file))
-                    into("build/intermediates/classes/release/")
+                    into(project.buildDir.path + "/intermediates/classes/release/")
                 }
         }
     }
@@ -214,7 +214,7 @@ task embedJniLibs << {
         // Copy JNI Folders
         copy {
             from fileTree(dir: "$aarPath/jni")
-            into file("build/intermediates/bundles/release/jni")
+            into file(project.buildDir.path + "/intermediates/bundles/release/jni")
         }
     }
 }
@@ -265,8 +265,8 @@ task embedRClassFiles << {
 
         // println sb
 
-        mkdir("build/generated/source/r/release/$packagePath")
-        file("build/generated/source/r/release/$packagePath/R.java").write(sb.toString())
+        mkdir(project.buildDir.path + "/generated/source/r/release/$packagePath")
+        file(project.buildDir.path + "/generated/source/r/release/$packagePath/R.java").write(sb.toString())
     }
 }
 
@@ -281,11 +281,11 @@ task embedManifests << {
         }
     }
 
-    File reportFile = file("build/embedManifestReport.txt")
+    File reportFile = file(project.buildDir.path + "/embedManifestReport.txt")
 
-    File origManifest = file("build/intermediates/bundles/release/AndroidManifest.xml")
-    File copyManifest = file("build/intermediates/bundles/release/AndroidManifest.orig.xml")
-    File aaptManifest = file("build/intermediates/bundles/release/aapt/AndroidManifest.xml")
+    File origManifest = file(project.buildDir.path + "/intermediates/bundles/release/AndroidManifest.xml")
+    File copyManifest = file(project.buildDir.path + "/intermediates/bundles/release/AndroidManifest.orig.xml")
+    File aaptManifest = file(project.buildDir.path + "/intermediates/bundles/release/aapt/AndroidManifest.xml")
 
     copy {
         from origManifest.parentFile
