@@ -110,6 +110,7 @@ afterEvaluate {
         embedLibraryResources.dependsOn embedProguard
 
         def embedJavaJars = embedJavaJarsTask(variantName, currentFlavorName, currentBuildType)
+        embedJavaJars.dependsOn embedRClassesInJarTask(variantName, currentFlavorName, currentBuildType)
 
         if (tasks.findByPath("compile${variantName}Java") != null) {
             tasks.findByPath("compile${variantName}Java").dependsOn embedRClassFiles
@@ -212,6 +213,22 @@ def embedJavaJarsTask(variantName, flavorName, buildType) {
                         into("build/intermediates/classes/${flavorName}/${buildType}/")
                     }
             }
+        }
+    }
+}
+
+def embedRClassesInJarTask(variantName, flavorName, buildType) {
+    return tasks.create("embedRClassesInJarFor${variantName}", Jar.class) {
+        archiveName 'embedded.jar'
+        destinationDir file("build/intermediates/bundles/${flavorName}/${buildType}/libs")
+
+        from "build/intermediates/classes/${flavorName}/${buildType}"
+        embeddedAarDirs.each { aarPath ->
+            def aarManifest = new XmlParser().parse(file("$aarPath/AndroidManifest.xml"));
+            def aarPackageName = aarManifest.@package
+            String packagePath = aarPackageName.replace('.', '/')
+            include "${packagePath}/R.class"
+            include "${packagePath}/R\$*.class"
         }
     }
 }
