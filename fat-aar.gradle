@@ -260,6 +260,7 @@ task generateRJava(dependsOn: copyJavaJars) << {
     def libPackageName = new XmlParser().parse(android.sourceSets.main.manifest.srcFile).@package
     def mappingRText = "# Mapping file to convert R.class to X.class" << '\n' << '\n';
     embeddedAarDirs.each { aarPath ->
+
         def aarManifest = new XmlParser().parse(file("$aarPath/AndroidManifest.xml"));
         def aarPackageName = aarManifest.@package
         String packagePath = aarPackageName.replace('.', '/')
@@ -363,14 +364,8 @@ task embedJavaJars(dependsOn: generateXClass) << {
     println "Running FAT-AAR Task :embedJavaJars"
 
     copy {
-
-        println "===================================";
-        println "from : $post_r2x_dir";
-        println "to : $classs_release_dir";
-
         from fileTree(dir: post_r2x_dir)
         into file(classs_release_dir)
-        println "===================================";
     }
 }
 
@@ -380,6 +375,7 @@ task embedJavaJars(dependsOn: generateXClass) << {
 task embedJniLibs << {
     println "Running FAT-AAR Task :embedJniLibs"
 
+        println "======= Copying JNI from $aarPath/jni"
     libraryPaths.each { jarPath ->
         // Copy JNI Folders
         println "======= Copying JNI from $jarPath/jni"
@@ -397,9 +393,9 @@ task embedManifests << {
     List<File> libraryManifests = new ArrayList<>()
 
     embeddedAarDirs.each { aarPath ->
-        if (!libraryManifests.contains(aarPath))
-        {
+        if (!libraryManifests.contains(aarPath)) {
             libraryManifests.add(file("$aarPath/AndroidManifest.xml"))
+            // println "==== Added $aarPath Manifest"
         }
     }
 
