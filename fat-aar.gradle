@@ -374,8 +374,7 @@ task embedJavaJars(dependsOn: generateXClass) << {
  */
 task embedJniLibs << {
     println "Running FAT-AAR Task :embedJniLibs"
-
-        println "======= Copying JNI from $aarPath/jni"
+    
     libraryPaths.each { jarPath ->
         // Copy JNI Folders
         println "======= Copying JNI from $jarPath/jni"
