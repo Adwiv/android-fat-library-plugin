@@ -70,6 +70,8 @@ dependencies {
 ext.embeddedJars = new ArrayList<String>()
 // Paths to embedded aar projects
 ext.embeddedAarDirs = new ArrayList<String>()
+// Embedded aar files dependencies
+ext.embeddedAarFiles = new ArrayList<ResolvedArtifact>()
 // List of embedded R classes
 ext.embeddedRClasses = new ArrayList<String>()
 
@@ -91,7 +93,11 @@ afterEvaluate {
         def aarPath = "${exploded_aar_dir}/${it.moduleGroup}/${it.moduleName}/${it.moduleVersion}"
         it.moduleArtifacts.each {
             artifact ->
+
                 if (artifact.type == 'aar') {
+                    if (!embeddedAarFiles.contains(artifact)) {
+                        embeddedAarFiles.add(artifact)
+                    }
                     if (!embeddedAarDirs.contains(aarPath)) {
                         embeddedAarDirs.add(aarPath)
                     }
@@ -116,7 +122,15 @@ afterEvaluate {
 
         // Embed JNI Libraries
         bundleRelease.dependsOn embedJniLibs
-        embedJniLibs.dependsOn transformNative_libsWithSyncJniLibsForRelease
+
+        if(GradleVersion.current().getVersion().toFloat() >= 2.3f) {
+
+            embedJniLibs.dependsOn transformNativeLibsWithSyncJniLibsForRelease
+            ext.bundle_release_dir = "$build_dir/intermediates/bundles/default"
+        }else{
+            embedJniLibs.dependsOn transformNative_libsWithSyncJniLibsForRelease
+            ext.bundle_release_dir = "$build_dir/intermediates/bundles/release";
+        }
 
         // Merge Embedded Manifests
         bundleRelease.dependsOn embedManifests
@@ -215,8 +229,13 @@ task generateRJava << {
 
     embeddedAarDirs.each { aarPath ->
 
-        def aarManifest = new XmlParser().parse(file("$aarPath/AndroidManifest.xml"));
+        def manifestFile = file("$aarPath/AndroidManifest.xml");
+        if(!manifestFile.exists()) {
+            manifestFile = file("./src/main/AndroidManifest.xml");
+        }
+        def aarManifest = new XmlParser().parse(manifestFile);
         def aarPackageName = aarManifest.@package
+
         String packagePath = aarPackageName.replace('.', '/')
 
         // Generate the R.java file and map to current project's R.java
@@ -280,10 +299,30 @@ task embedJavaJars(dependsOn: embedRClass) << {
     println "Running FAT-AAR Task :embedJavaJars"
 
     embeddedAarDirs.each { aarPath ->
-        // Explode all classes.jar files to classes so that they can be proguarded
-        copy {
-            from zipTree("$aarPath/jars/classes.jar")
-            into classs_release_dir
+
+//        aarFile = configurations.runtime.files;
+        if(embeddedAarFiles.size() > 0){
+
+            embeddedAarFiles.each {
+                artifact ->
+                    FileTree aarFileTree = zipTree(artifact.file.getAbsolutePath());
+
+                    def aarFile = aarFileTree.files.find { it.name.contains("classes.jar") }
+
+                    copy {
+                        from zipTree(aarFile)
+                        into classs_release_dir
+                    }
+            }
+
+        }else{
+
+            // Explode all classes.jar files to classes so that they can be proguarded
+            copy {
+
+                from zipTree("$aarPath/jars/classes.jar")
+                into classs_release_dir
+            }
         }
 
         // Copy all additional jar files to bundle lib
@@ -327,8 +366,10 @@ task embedManifests << {
     List<File> libraryManifests = new ArrayList<>()
 
     embeddedAarDirs.each { aarPath ->
-        if (!libraryManifests.contains(aarPath)) {
-            libraryManifests.add(file("$aarPath/AndroidManifest.xml"))
+        File dependencyManifest = file("$aarPath/AndroidManifest.xml")
+
+        if (!libraryManifests.contains(aarPath) && dependencyManifest.exists()) {
+            libraryManifests.add(dependencyManifest)
         }
     }
 
@@ -337,6 +378,10 @@ task embedManifests << {
     File origManifest = file("$bundle_release_dir/AndroidManifest.xml")
     File copyManifest = file("$bundle_release_dir/AndroidManifest.orig.xml")
     File aaptManifest = file("$manifest_aaapt_dir/AndroidManifest.xml")
+
+    if(!origManifest.exists()) {
+        origManifest = file("./src/main/AndroidManifest.xml")
+    }
 
     copy {
         from origManifest.parentFile
